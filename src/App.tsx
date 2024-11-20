@@ -1,31 +1,51 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { CircleCheckBigIcon, Trash2Icon, UndoIcon} from "lucide-react"
+import { CircleCheckBigIcon, Trash2Icon } from "lucide-react"
+import { createTodo, getTodos } from "./api";
+import { authService } from "./api/authService";
 
+// A interface em que objetos do tipo Item respeitarão
 interface Item {
-  titulo: string,
-  concluido: boolean,
+  _id: string,
+  name: string,
+  timestamp: number,
+  done: boolean,
 }
 
-function Menu() {
+function Menu({setLogado}: {setLogado: () => void}) {
+  
   return (
-    <div className="py-4 border-b">
+    <div>
+      <div className="py-2 border-b">
       Lista de Tarefas
     </div>
+    <Button onClick={() => {
+      authService.logout();
+      setLogado()
+      }}>Logout</Button>
+    </div>
+    
   );
 }
 
-function TodoItem( {item, remover, concluir} : {item: Item, remover: () => void, concluir: () => void}){
+function TodoItem({
+    item,
+    remover,
+    concluir
+  }: {
+    item: Item,
+    remover: () => void,
+    concluir: () => void,
+  }) {
   return (
-    <div className={`flex items-center justify-between p-2 rounded-md border bg-slate-50 ${item.concluido ? 'opacity-25 hover:opacity-50' : '' }`}>
-      <div className={item.concluido ? `line-through` : ''}>
-        {item.titulo}
-        </div>
-      <div className="space-x-2">
+    <div className={`flex items-center justify-between p-2 rounded-md border bg-slate-50 ${item.done ? 'opacity-50' : ''}`}>
+      <div className={item.done ? 'line-through' : ''}>
+        {item.name}
+      </div>
+      <div className="space-x-1">
         <Button variant="outline" size="icon" onClick={concluir}>
-          {!item.concluido ? (<CircleCheckBigIcon className="h-4 w-4 text-green-700 " />) : (<UndoIcon className="h-4 w-4 text-green-700 " />)}
-        
+          <CircleCheckBigIcon className="h-4 w-4 text-green-700" />
         </Button>
         <Button variant="outline" size="icon" onClick={remover}>
           <Trash2Icon className="h-4 w-4 text-red-700" />
@@ -36,48 +56,51 @@ function TodoItem( {item, remover, concluir} : {item: Item, remover: () => void,
 }
 
 function Conteudo() {
-  const [itens, setItens] = useState([] as Item[]);
+  const [itens, setItens] = useState([] as Item[]); // um array de itens
+
+  useEffect(() => {
+    // chamar a api
+    getTodos().then(result => {
+      setItens(result);
+    })
+  }, []);
 
   function submeterFormulario(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    const f = e.target as HTMLElement;
-
-    const titulo = f.querySelector('input')?.value
+    // pegar o valor digitado no input
+    const form = e.target as HTMLElement;
+    const titulo = form.querySelector('input')?.value;
 
     if (titulo) {
-      const item:Item = {
-        titulo: titulo,
-        concluido: false,
-      }
+      // instanciação de um novo objeto que respeita a interface Item
+      createTodo(titulo).then((item) => {
+      // setar os itens do estado (setItens)
+      setItens([item, ...itens]);
 
-      setItens([...itens, item]);
+    });
 
-      f.querySelector('input')!.value = '';
+      
+      // limpar o input após inserção
+      form.querySelector('input')!.value = '';
     }
   }
 
   function remover(index: number) {
-    if (confirm('certeza que deseja remover o item?')) {
-      setItens(itens.filter((_, i) => i!== index));
-    } else {
-      return;
+    if (confirm("Tem certeza que deseja remover?")) {
+      setItens(itens.filter((_, i) => i !== index));
     }
   }
 
-  function concluir(index: number){
+  function concluir(index: number) {
     const item = itens[index];
-    if (item.concluido){
-      item.concluido = false;
-    } else {
-      item.concluido = true;
-    }
+    item.done = true; // modificando a propriedade done
 
     setItens([...itens]);
   }
 
   return (
-    <div  className="space-y-4">
+    <div className="space-y-4">
       <form onSubmit={(e) => submeterFormulario(e)}>
         <div className="flex w-full max-w-sm items-center space-x-2">
           <Input type="text" placeholder="Escreva uma tarefa..." />
@@ -85,12 +108,15 @@ function Conteudo() {
         </div>
       </form>
 
-
-      <div className="space-y-4">
-
-        {itens.map((item, index) => (
-          <TodoItem key={index} item={item} remover={() => remover(index)} concluir={() => concluir(index)}/>
-        ))}
+      <div className="space-y-2">
+        {itens.map((item, index) => {
+          return <TodoItem
+              key={index}
+              item={item}
+              remover={() => remover(index)}
+              concluir={() => concluir(index)}
+            />
+        })}
       </div>
     </div>
   );
@@ -105,13 +131,44 @@ function Rodape() {
 }
 
 function App() {
-  return (
-    <div className = "m-4 space-y-6">
-      <Menu />
-      <Conteudo />
-      <Rodape />
-    </div>
-  );
+  const [logado, setLogado] = useState(false);
+
+  if (logado || authService.getToken()) { 
+    return (
+      <div className="m-4 space-y-6">
+        <Menu setLogado={() => setLogado(false)} />
+        <Conteudo />
+        <Rodape />
+      </div>
+    );
+  }
+  else {
+
+    function submeterFormulario(e: React.FormEvent<HTMLFormElement>) {
+      e.preventDefault();
+  
+      // pegar o valor digitado no input
+      const form = e.target as HTMLElement;
+      const usuario = (form.querySelector('input[type=text]') as HTMLInputElement)?.value;
+      const senha = (form.querySelector('input[type=password]') as HTMLInputElement)?.value;
+
+      authService.login(usuario, senha).then(() => {
+        setLogado(true);
+      })
+    }
+    //mostrar o formulário de login
+    return (
+      <div>
+      <form onSubmit={(e) => submeterFormulario(e)}>
+        <div className="p-4 space-y-2">
+          <Input type="text" placeholder="Nome de usuário" />
+          <Input type="password" placeholder="Senha" />
+          <Button type="submit">Autenticar</Button>
+        </div>
+      </form></div>
+    )
+
+  }
 }
 
 export default App
